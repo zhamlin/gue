@@ -35,29 +35,29 @@ func (ct aCommandTag) RowsAffected() int64 {
 	return ct.ct.RowsAffected()
 }
 
-// aTx implements adapter.Tx using github.com/jackc/pgx/v4
-type aTx struct {
+// ATx implements adapter.Tx using github.com/jackc/pgx/v4
+type ATx struct {
 	tx pgx.Tx
 }
 
 // NewTx instantiates new adapter.Tx using github.com/jackc/pgx/v4
 func NewTx(tx pgx.Tx) adapter.Tx {
-	return &aTx{tx: tx}
+	return &ATx{tx: tx}
 }
 
 // Exec implements adapter.Tx.Exec() using github.com/jackc/pgx/v4
-func (tx *aTx) Exec(ctx context.Context, sql string, arguments ...interface{}) (adapter.CommandTag, error) {
+func (tx *ATx) Exec(ctx context.Context, sql string, arguments ...interface{}) (adapter.CommandTag, error) {
 	ct, err := tx.tx.Exec(ctx, sql, arguments...)
 	return aCommandTag{ct}, err
 }
 
 // QueryRow implements adapter.Tx.QueryRow() using github.com/jackc/pgx/v4
-func (tx *aTx) QueryRow(ctx context.Context, sql string, args ...interface{}) adapter.Row {
+func (tx *ATx) QueryRow(ctx context.Context, sql string, args ...interface{}) adapter.Row {
 	return &aRow{tx.tx.QueryRow(ctx, sql, args...)}
 }
 
 // Rollback implements adapter.Tx.Rollback() using github.com/jackc/pgx/v4
-func (tx *aTx) Rollback(ctx context.Context) error {
+func (tx *ATx) Rollback(ctx context.Context) error {
 	err := tx.tx.Rollback(ctx)
 	if err == pgx.ErrTxClosed {
 		return adapter.ErrTxClosed
@@ -66,8 +66,13 @@ func (tx *aTx) Rollback(ctx context.Context) error {
 	return err
 }
 
+// Tx returns the ordinal tx
+func (tx *ATx) Tx() pgx.Tx {
+	return tx.tx
+}
+
 // Commit implements adapter.Tx.Commit() using github.com/jackc/pgx/v4
-func (tx *aTx) Commit(ctx context.Context) error {
+func (tx *ATx) Commit(ctx context.Context) error {
 	return tx.tx.Commit(ctx)
 }
 
