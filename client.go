@@ -103,7 +103,7 @@ VALUES
 //
 // After the Job has been worked, you must call either Done() or Error() on it
 // in order to commit transaction to persist Job changes (remove or update it).
-func (c *Client) LockJob(ctx context.Context, queue string) (*Job, error) {
+func (c *Client) LockJob(ctx context.Context, queue string, maxErrorCount int) (*Job, error) {
 	tx, err := c.pool.Begin(ctx)
 	if err != nil {
 		return nil, err
@@ -111,11 +111,68 @@ func (c *Client) LockJob(ctx context.Context, queue string) (*Job, error) {
 
 	j := Job{pool: c.pool, tx: tx, backoff: c.backoff}
 
-	err = tx.QueryRow(ctx, `SELECT job_id, queue, priority, run_at, job_type, args, error_count
+	query := `
+SELECT job_id, queue, priority, run_at, job_type, args, error_count
 FROM gue_jobs
-WHERE queue = $1 AND run_at <= $2
+WHERE run_at <= $1 AND queue = $2
+%s
 ORDER BY priority ASC
-LIMIT 1 FOR UPDATE SKIP LOCKED`, queue, time.Now()).Scan(
+LIMIT 1 FOR UPDATE SKIP LOCKED`
+
+	args := []interface{}{time.Now(), queue}
+	var whereCond string
+	if maxErrorCount > 0 {
+		args = append(args, maxErrorCount)
+		whereCond = fmt.Sprintf("AND error_count < $%d", len(args))
+	}
+
+	q := fmt.Sprintf(query, whereCond)
+	err = tx.QueryRow(ctx, q, args...).Scan(
+		&j.ID,
+		&j.Queue,
+		&j.Priority,
+		&j.RunAt,
+		&j.Type,
+		&j.Args,
+		&j.ErrorCount,
+	)
+	if err == nil {
+		return &j, nil
+	}
+
+	rbErr := tx.Rollback(ctx)
+	if err == adapter.ErrNoRows {
+		return nil, rbErr
+	}
+
+	return nil, fmt.Errorf("could not lock a job (rollback result: %v): %w", rbErr, err)
+}
+
+func (c *Client) LockJobMinError(ctx context.Context, queue string, minErrorCount int) (*Job, error) {
+	tx, err := c.pool.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	j := Job{pool: c.pool, tx: tx, backoff: c.backoff}
+
+	query := `
+SELECT job_id, queue, priority, run_at, job_type, args, error_count
+FROM gue_jobs
+WHERE error_count >= $1
+%s
+ORDER BY priority ASC
+LIMIT 1 FOR UPDATE SKIP LOCKED`
+
+	args := []interface{}{minErrorCount}
+	var whereCond string
+	if queue != "" {
+		args = append(args, queue)
+		whereCond = fmt.Sprintf("AND queue = $%d", len(args))
+	}
+
+	q := fmt.Sprintf(query, whereCond)
+	err = tx.QueryRow(ctx, q, args...).Scan(
 		&j.ID,
 		&j.Queue,
 		&j.Priority,

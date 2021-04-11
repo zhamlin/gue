@@ -27,6 +27,10 @@ type WorkMap map[string]WorkFunc
 // Worker is a single worker that pulls jobs off the specified queue. If no Job
 // is found, the Worker will sleep for interval seconds.
 type Worker struct {
+	allJobs       bool
+	minErrorCount int
+	maxErrorCount int
+
 	wm       WorkMap
 	interval time.Duration
 	queue    string
@@ -111,11 +115,18 @@ func (w *Worker) Start(ctx context.Context) error {
 
 // WorkOne tries to consume single message from the queue.
 func (w *Worker) WorkOne(ctx context.Context) (didWork bool) {
-	j, err := w.c.LockJob(ctx, w.queue)
+	var j *Job
+	var err error
+	if w.minErrorCount > 0 {
+		j, err = w.c.LockJobMinError(ctx, w.queue, w.minErrorCount)
+	} else {
+		j, err = w.c.LockJob(ctx, w.queue, w.maxErrorCount)
+	}
 	if err != nil {
 		w.logger.Error("Worker failed to lock a job", adapter.Err(err))
 		return
 	}
+
 	if j == nil {
 		return // no job was available
 	}
@@ -132,12 +143,25 @@ func (w *Worker) WorkOne(ctx context.Context) (didWork bool) {
 	didWork = true
 
 	wf, ok := w.wm[j.Type]
-	if !ok {
-		ll.Error("Got a job with unknown type")
-		if err = j.Error(ctx, fmt.Sprintf("worker[id=%s] unknown job type: %q", w.id, j.Type)); err != nil {
-			ll.Error("Got an error on setting an error to unknown job", adapter.Err(err))
+	if !ok && !w.allJobs {
+		if !w.allJobs {
+			ll.Error("Got a job with unknown type")
+			if err = j.Error(ctx, fmt.Sprintf("worker[id=%s] unknown job type: %q", w.id, j.Type)); err != nil {
+				ll.Error("Got an error on setting an error to unknown job", adapter.Err(err))
+			}
+			return
 		}
-		return
+	}
+
+	if wf == nil {
+		// check for a default job type
+		wf, ok = w.wm[""]
+		if !ok {
+			ll.Error("worker has no default job handler")
+			if err = j.Error(ctx, fmt.Sprintf("worker[id=%s] had no default job handler: %q", w.id, j.Type)); err != nil {
+				ll.Error("Got an error on setting an error to unknown job", adapter.Err(err))
+			}
+		}
 	}
 
 	if err = wf(j); err != nil {
@@ -178,6 +202,10 @@ func recoverPanic(ctx context.Context, logger adapter.Logger, j *Job) {
 // WorkerPool is a pool of Workers, each working jobs from the queue queue
 // at the specified interval using the WorkMap.
 type WorkerPool struct {
+	allJobs       bool
+	minErrorCount int
+	maxErrorCount int
+
 	wm       WorkMap
 	interval time.Duration
 	queue    string
@@ -238,6 +266,9 @@ func (w *WorkerPool) Start(ctx context.Context) error {
 			WithWorkerQueue(w.queue),
 			WithWorkerID(fmt.Sprintf("%s/worker-%d", w.id, i)),
 			WithWorkerLogger(w.logger),
+			WithWorkerAllJobs(w.allJobs),
+			WithWorkerMaxErrorCount(w.maxErrorCount),
+			WithWorkerMinErrorCount(w.minErrorCount),
 		)
 
 		workerCtx[i], cancelFunc[i] = context.WithCancel(ctx)

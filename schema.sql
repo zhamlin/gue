@@ -12,6 +12,8 @@ CREATE TABLE IF NOT EXISTS gue_jobs
     updated_at  timestamptz NOT NULL
 );
 
-CREATE INDEX IF NOT EXISTS "idx_gue_jobs_selector" ON "gue_jobs" ("queue", "run_at", "priority");
+CREATE INDEX IF NOT EXISTS "idx_gue_jobs_selector" ON "gue_jobs" ("queue", "run_at", "priority", "error_count");
 
 COMMENT ON TABLE gue_jobs IS '1';
+
+create table gue_jobs_dead (like gue_jobs including all);

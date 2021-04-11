@@ -41,6 +41,27 @@ func WithWorkerLogger(logger adapter.Logger) WorkerOption {
 	}
 }
 
+// WithWorkerAllJobs sets the worker to process every job type
+func WithWorkerAllJobs(all bool) WorkerOption {
+	return func(w *Worker) {
+		w.allJobs = all
+	}
+}
+
+// WithWorkerMaxErrorCount sets the maximum amount of errors a job can have before it is ignored
+func WithWorkerMaxErrorCount(count int) WorkerOption {
+	return func(c *Worker) {
+		c.maxErrorCount = count
+	}
+}
+
+// WithWorkerMinErrorCount sets the minimum amount of can a job can have before it is selected
+func WithWorkerMinErrorCount(count int) WorkerOption {
+	return func(c *Worker) {
+		c.minErrorCount = count
+	}
+}
+
 // WithPoolPollInterval overrides default poll interval with the given value.
 // Poll interval is the "sleep" duration if there were no jobs found in the DB.
 func WithPoolPollInterval(d time.Duration) WorkerPoolOption {
@@ -67,5 +88,26 @@ func WithPoolID(id string) WorkerPoolOption {
 func WithPoolLogger(logger adapter.Logger) WorkerPoolOption {
 	return func(w *WorkerPool) {
 		w.logger = logger
+	}
+}
+
+// WithWorkerPoolAllJobs sets the worker to process every job type
+func WithWorkerPoolAllJobs(all bool) WorkerPoolOption {
+	return func(w *WorkerPool) {
+		w.allJobs = all
+	}
+}
+
+// WithWorkerPoolMaxErrorCount sets the maximum amount of errors a job can have before it is ignored
+func WithWorkerPoolMaxErrorCount(count int) WorkerPoolOption {
+	return func(c *WorkerPool) {
+		c.maxErrorCount = count
+	}
+}
+
+// WithWorkerPoolMinErrorCount sets the minimum amount of can a job can have before it is selected
+func WithWorkerPoolMinErrorCount(count int) WorkerPoolOption {
+	return func(c *WorkerPool) {
+		c.minErrorCount = count
 	}
 }
